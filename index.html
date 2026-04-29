@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Lucas</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body style="margin:0; font-family: Arial, sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; background:#f5f5f5;">
+
+    <div style="width:500px;">
+        <h2 style="text-align:center; margin-bottom:5px;">Lucas</h2>
+
+        <div style="text-align:center; margin-bottom:4px; font-size:12px;">
+            <a href="forum.html" style="color:#555;">visit forum</a>
+        </div>
+
+        <div id="last-seen" style="text-align:center; margin-bottom:10px; font-size:11px; color:#777;">
+            last seen: just now
+        </div>
+
+        <div id="chat-box"
+             style="border:1px solid black; height:400px; overflow-y:auto; padding:10px; background:white; margin-bottom:10px;">
+        </div>
+
+        <div style="display:flex; gap:5px;">
+            <input type="text" id="user-input" style="flex:1; padding:5px;" placeholder="Type message here">
+            <button id="send-button" onclick="sendMessage()">Send</button>
+            <button id="reset-button" onclick="resetChat()">Reset</button>
+        </div>
+    </div>
+
+    <script>
+let socket = null;
+let isSending = false;
+let lucasTyping = false;
+let typingTimeout = null;
+
+function getSessionId() {
+    let sessionId = localStorage.getItem("lucas_session_id");
+
+    if (!sessionId) {
+        sessionId = crypto.randomUUID();
+        localStorage.setItem("lucas_session_id", sessionId);
+    }
+
+    return sessionId;
+}
+
+function saveChatCache() {
+    const chatBox = document.getElementById("chat-box");
+    localStorage.setItem("lucas_chat_cache", chatBox.innerHTML);
+}
+
+function loadChatCache() {
+    const cached = localStorage.getItem("lucas_chat_cache");
+    if (cached) {
+        document.getElementById("chat-box").innerHTML = cached;
+    }
+}
+
+function scrollChatToBottom() {
+    const chatBox = document.getElementById("chat-box");
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function setInputLocked(locked) {
+    const input = document.getElementById("user-input");
+    const sendButton = document.getElementById("send-button");
+
+    input.disabled = locked;
+    sendButton.disabled = locked;
+
+    if (!locked) {
+        input.focus();
+    }
+}
+
+function renderMessage(msg) {
+    const chatBox = document.getElementById("chat-box");
+
+    if (msg.type === "text") {
+        if (msg.role === "User") {
+            chatBox.innerHTML += `<p><span style="color:red;"><b>You:</b></span> ${msg.content}</p>`;
+        } else {
+            chatBox.innerHTML += `<p><span style="color:blue;"><b>Lucas:</b></span> ${msg.content}</p>`;
+        }
+    } else if (msg.type === "meme") {
+        chatBox.innerHTML += `
+            <p>
+                <span style="color:blue;"><b>Lucas:</b></span><br>
+                <img src="data:image/jpeg;base64,${msg.image_base64}" style="max-width:100%; margin-top:5px;">
+            </p>
+        `;
+    }
+    if (msg.role === "Lucas") {
+    updateLastSeenNow();
+    }
+
+    scrollChatToBottom();
+}
+
+function showTypingIndicator() {
+    const chatBox = document.getElementById("chat-box");
+    const existing = document.getElementById("lucas-typing");
+    if (existing) return;
+
+    const typing = document.createElement("p");
+    typing.id = "lucas-typing";
+    typing.innerHTML = `<span style="color:blue;"><b>Lucas:</b></span> <i>typing...</i>`;
+    chatBox.appendChild(typing);
+
+    scrollChatToBottom();
+}
+
+function hideTypingIndicator() {
+    const typing = document.getElementById("lucas-typing");
+    if (typing) typing.remove();
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getMessageDelay(msg) {
+    if (msg.type === "meme") {
+        return 1200 + Math.floor(Math.random() * 600);
+    }
+
+    const text = msg.content || "";
+    let delay = 250 + text.length * 12;
+
+    if (text.length <= 8) delay -= 80;
+    if (text.includes("?")) delay += 100;
+    if (text.includes("...")) delay += 120;
+
+    delay += Math.floor(Math.random() * 180);
+
+    return Math.min(Math.max(delay, 180), 1600);
+}
+
+function getInitialThinkingDelay(messages) {
+    const totalLength = messages.reduce((sum, msg) => {
+        if (msg.type === "text") return sum + (msg.content || "").length;
+        if (msg.type === "meme") return sum + 20;
+        return sum;
+    }, 0);
+
+    let delay = 350 + totalLength * 4 + Math.floor(Math.random() * 350);
+    return Math.min(Math.max(delay, 300), 1400);
+}
+
+async function renderLucasMessagesSequentially(messages) {
+    for (const msg of messages) {
+        const delay = getMessageDelay(msg);
+        await sleep(delay);
+
+        if (msg.type === "text") {
+            renderMessage({
+                type: "text",
+                role: "Lucas",
+                content: msg.content
+            });
+        } else if (msg.type === "meme") {
+            renderMessage({
+                type: "meme",
+                role: "Lucas",
+                image_base64: msg.image_base64
+            });
+        }
+
+        saveChatCache();
+        await sleep(80 + Math.floor(Math.random() * 140));
+    }
+}
+
+function startLucasTyping() {
+    lucasTyping = true;
+    showTypingIndicator();
+    setInputLocked(true);
+    updateLastSeenText();
+}
+
+function stopLucasTyping() {
+    lucasTyping = false;
+    hideTypingIndicator();
+    setInputLocked(false);
+    updateLastSeenText();
+}
+
+function clearTypingTimer() {
+    if (typingTimeout) {
+        clearTimeout(typingTimeout);
+        typingTimeout = null;
+    }
+}
+
+async function sendMessage() {
+    if (isSending || lucasTyping) return;
+
+    const input = document.getElementById("user-input");
+    const message = input.value.trim();
+
+    if (!message) return;
+
+    isSending = true;
+    setInputLocked(true);
+
+    renderMessage({
+        type: "text",
+        role: "User",
+        content: message
+    });
+
+    saveChatCache();
+    input.value = "";
+
+    try {
+        const response = await fetch("/chat", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                session_id: getSessionId(),
+                message: message
+            })
+        });
+
+        const raw = await response.text();
+        console.log("RAW SERVER RESPONSE:", raw);
+
+        const data = JSON.parse(raw);
+        console.log("ACTION:", data.action);
+
+        if (Array.isArray(data.messages)) {
+            const thinkingDelay = getInitialThinkingDelay(data.messages);
+            await sleep(thinkingDelay);
+
+            startLucasTyping();
+            await renderLucasMessagesSequentially(data.messages);
+            stopLucasTyping();
+
+            if (data.action && data.action.type === "redirect" && data.action.url) {
+                const delay = data.action.delay_ms || 3000;
+
+                console.log("redirecting in", delay, "to", data.action.url);
+
+                setTimeout(() => {
+                    window.location.href = data.action.url;
+                }, delay);
+            }
+
+            await handleFollowUp(data.follow_up);
+
+        } else {
+            await sleep(500 + Math.floor(Math.random() * 300));
+            startLucasTyping();
+            await sleep(500);
+
+            renderMessage({
+                type: "text",
+                role: "Lucas",
+                content: "invalid response"
+            });
+
+            saveChatCache();
+            stopLucasTyping();
+        }
+
+    } catch (error) {
+        console.error("FRONTEND ERROR:", error);
+
+        await sleep(500 + Math.floor(Math.random() * 300));
+        startLucasTyping();
+        await sleep(500);
+
+        renderMessage({
+            type: "text",
+            role: "Lucas",
+            content: "ughhh im getting interruptions in traffic right now something is wrong sorry"
+        });
+
+        saveChatCache();
+        stopLucasTyping();
+    } finally {
+        isSending = false;
+    }
+}
+
+async function loadHistory() {
+    const chatBox = document.getElementById("chat-box");
+
+    try {
+        const response = await fetch("/history", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                session_id: getSessionId()
+            })
+        });
+
+        const data = await response.json();
+
+        chatBox.innerHTML = "";
+
+        if (Array.isArray(data.messages)) {
+            for (const msg of data.messages) {
+                renderMessage(msg);
+            }
+        }
+
+        saveChatCache();
+    } catch (error) {
+        console.error("LOAD HISTORY ERROR:", error);
+    }
+}
+
+async function resetChat() {
+    const chatBox = document.getElementById("chat-box");
+
+    try {
+        await fetch("/reset", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                session_id: getSessionId()
+            })
+        });
+
+        chatBox.innerHTML = "";
+        localStorage.removeItem("lucas_chat_cache");
+        clearTypingTimer();
+        hideTypingIndicator();
+        setInputLocked(false);
+        isSending = false;
+        lucasTyping = false;
+
+        // ask backend to let Lucas start again
+        await fetch("/starter", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                session_id: getSessionId()
+            })
+        });
+
+    } catch (error) {
+        console.error("RESET ERROR:", error);
+    }
+}
+
+function connectSocket() {
+    socket = io();
+
+    socket.on("connect", () => {
+        socket.emit("join", { session_id: getSessionId() });
+    });
+
+    socket.on("joined", (data) => {
+        console.log("joined socket room", data);
+    });
+
+    socket.on("lucas_typing", (data) => {
+        if (isSending) return;
+
+        if (data.typing) {
+            clearTypingTimer();
+
+            const delay = 400 + Math.floor(Math.random() * 700);
+            typingTimeout = setTimeout(() => {
+                startLucasTyping();
+                typingTimeout = null;
+            }, delay);
+        } else {
+            clearTypingTimer();
+            stopLucasTyping();
+        }
+    });
+
+    socket.on("lucas_messages", async (data) => {
+        clearTypingTimer();
+
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+            if (!lucasTyping) {
+                startLucasTyping();
+                await sleep(250 + Math.floor(Math.random() * 250));
+            }
+
+            await renderLucasMessagesSequentially(data.messages);
+            updateLastSeenNow();
+            stopLucasTyping();
+        }
+    });
+
+    setInterval(() => {
+        if (socket && socket.connected) {
+            socket.emit("presence", { session_id: getSessionId() });
+        }
+    }, 15000);
+}
+
+document.getElementById("user-input").addEventListener("keydown", function(event) {
+    if (event.key === "Enter") {
+        sendMessage();
+    }
+});
+
+window.onload = async function() {
+    loadChatCache();
+    await loadHistory();
+    connectSocket();
+};
+
+let lastLucasSeenAt = Date.now();
+
+function updateLastSeenNow() {
+    lastLucasSeenAt = Date.now();
+    updateLastSeenText();
+}
+
+function updateLastSeenText() {
+    const el = document.getElementById("last-seen");
+    if (!el) return;
+
+    const diff = Math.floor((Date.now() - lastLucasSeenAt) / 1000);
+
+    if (lucasTyping) {
+        el.innerText = "typing...";
+    } else if (diff < 20) {
+        el.innerText = "last seen: just now";
+    } else if (diff < 60) {
+        el.innerText = `last seen: ${diff}s ago`;
+    } else {
+        const mins = Math.floor(diff / 60);
+        el.innerText = `last seen: ${mins}m ago`;
+    }
+}
+
+setInterval(updateLastSeenText, 5000);
+
+async function handleFollowUp(followUp) {
+    if (!followUp || !followUp.enabled || !followUp.message) return;
+
+    const delay = followUp.delay_ms || 5000;
+
+    setTimeout(async () => {
+        startLucasTyping();
+
+        await sleep(500 + Math.floor(Math.random() * 600));
+
+        renderMessage({
+            type: "text",
+            role: "Lucas",
+            content: followUp.message
+        });
+
+        updateLastSeenNow();
+        saveChatCache();
+        stopLucasTyping();
+    }, delay);
+}
+    </script>
+</body>
+</html>

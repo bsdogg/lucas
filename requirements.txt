@@ -1,0 +1,8 @@
+flask
+flask-cors
+flask-socketio
+openai
+pillow
+python-dotenv
+gunicorn
+eventlet
