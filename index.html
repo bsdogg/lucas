@@ -20,17 +20,13 @@
         #app {
             width: 500px;
             max-width: 100%;
-            height: 100dvh;
             margin: 0 auto;
-            display: flex;
-            flex-direction: column;
             box-sizing: border-box;
             padding: 10px;
         }
 
         #chat-box {
-            flex: 1;
-            min-height: 0;
+            height: 400px;
         }
 
         #input-row {
@@ -42,30 +38,67 @@
             flex: 1;
             padding: 8px;
             font-size: 16px;
+            min-width: 0;
         }
 
         button {
             padding: 8px 10px;
         }
 
+        @media (min-width: 601px) {
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 90vh;
+            }
+        }
+
         @media (max-width: 600px) {
+            body {
+                min-height: 100dvh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+
             #app {
-                width: 100%;
+                width: min(94vw, 430px);
+                height: auto;
+                max-height: 94dvh;
+                display: block;
                 padding: 8px;
             }
 
             h2 {
-                margin-top: 4px;
+                margin-top: 0;
             }
 
             #chat-box {
-                height: auto !important;
+                height: min(68vw, 430px) !important;
+                max-height: 55dvh;
                 font-size: 14px;
+            }
+
+            #input-row {
+                width: 100%;
             }
 
             img {
                 max-width: 100% !important;
                 height: auto;
+            }
+        }
+
+        @media (max-width: 380px) {
+            #chat-box {
+                height: 62vw !important;
+                max-height: 50dvh;
+            }
+
+            button {
+                padding: 8px 7px;
+                font-size: 12px;
             }
         }
     </style>
