@@ -284,7 +284,7 @@ def add_caption_to_image(image_path, caption):
 
     def get_font(size):
         try:
-            return ImageFont.truetype("arial.ttf", size)
+            return ImageFont.truetype("fonts/Impact.ttf", size)
         except Exception:
             return ImageFont.load_default()
 
