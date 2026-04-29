@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>d/internetlucas - Forum</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {
             margin: 0;
@@ -146,6 +147,63 @@
             margin-top: 20px;
             font-size: 11px;
             color: #555;
+        }
+
+                @media (max-width: 700px) {
+            #topbar {
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+
+            #wrapper {
+                display: block;
+            }
+
+            #sidebar {
+                width: 100%;
+                border-right: none;
+                border-bottom: 1px solid #7b8ca8;
+            }
+
+            #sidebar ul {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px 12px;
+            }
+
+            #sidebar li {
+                margin-bottom: 0;
+            }
+
+            #main {
+                padding: 10px;
+            }
+
+            .board-title {
+                font-size: 20px;
+            }
+
+            .post {
+                max-width: 100%;
+                box-shadow: none;
+                padding: 10px;
+            }
+
+            .post-meta span {
+                display: block;
+                margin-bottom: 3px;
+            }
+
+            .post-body {
+                font-size: 13px;
+                line-height: 1.45;
+                word-wrap: break-word;
+            }
+
+            .web-button {
+                width: 100%;
+                max-width: 220px;
+            }
         }
     </style>
 </head>
